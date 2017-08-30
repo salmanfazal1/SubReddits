@@ -1,0 +1,228 @@
+var http = require('http'); //include the http module
+var https = require('https'); //include the https module for secure requests
+var fs = require('fs'); //require the fs module
+
+//import util and exec to start a child process to obtain autnetication token from reddit
+//TODO: this is a quick fix for now
+var util = require('util');
+var exec = require('child_process').exec;
+//var redis = require('redis');
+//var client = redis.createClient();
+//client.on('connect', function (){console.log('connected to Redis')});
+//global token
+/*
+var MongoClient = require('mongodb').MongoClient;
+var assert = require('assert');
+var url = 'mongodb://localhost:27017/test';
+*/
+
+var token = null;
+
+
+//reddit developer account details 
+var app_id = '1cyxIAISOCwhRQ';
+var secret = 'D4U00jSRDv7ZkCDiOnZVNYqWNQc';
+var userAgent = 'ChangeMeClient/0.1 by salmanfazal1';
+var username = "salmanfazal1";
+//var password = "reddditclientui";
+var password = "salo-420";
+const PORT = 8080; //declare your listening port
+
+http.createServer(function(request, response){
+
+	/*if(token == null){
+			//Authenticate with Reddit and obtain token
+			//TODO: add functionality to refresh a new token once this one expires
+			oAuth();
+	}*/
+	if(request.url == '/'){
+		//sendRes(response, 'index.html', 'text/html');
+		sendRes(response, "assets/html/index.html", "text/html");
+		if(token == null){
+			oAuth();
+		}
+		
+
+	}else if(request.method ==='POST' && request.url==='/signuserup'){
+		let body ='';
+		var data;
+		request.on('data', (chunk) => {
+	    	body += chunk;
+	    }).on('end', () => {
+			data = JSON.parse(body);
+			console.log(data);
+
+	    });
+	}
+	else if(request.url == "/assets/images/search_icon.png"){
+		sendRes(response, "assets/images/search_icon.png", "image/png");
+
+	}else if(request.url == "/assets/scripts/Frontend.js"){
+		sendRes(response, "assets/scripts/Frontend.js", "text/javascript");
+
+	}else if(request.url == "/assets/scripts/jquery-3.0.0.min.js"){
+		sendRes(response, "assets/scripts/jquery-3.0.0.min.js", "text/javascript");
+
+	}else if(request.url == "/assets/styles/style.css"){
+		sendRes(response, "assets/styles/style.css", "text/css");
+
+	}else{
+		/*client.set(request.url, 1);*/
+		console.log(request.url);
+		//process user's request 
+		data_request(request, response);
+
+		
+	}
+
+}).listen(PORT, function(){//start listening
+	console.log('listening to port: %s', PORT);
+	if(token == null){
+			//Authenticate with Reddit and obtain token
+			//TODO: add functionality to refresh a new token once this one expires
+			oAuth();
+		}
+})
+
+
+/**
+* Sends a response for generic requests to the webpage scripts and icons
+* 
+*/
+
+function sendRes(response, file_name, content_type){
+	// send a file when requested
+	fs.readFile(file_name, function(error, file_contents){
+
+		if(error){
+			response.writeHead(404);
+			response.write('error reading file in sendRes: %s', file_name);
+		}else{
+			
+			response.writeHead(200, {'Content-Type': content_type});
+			response.write(file_contents);
+			console.log('file sent from server: %s', file_name);			
+		}
+		response.end();
+	});
+}
+
+function oAuth(){
+
+	//request reddit for an authentication token
+	var command = 'curl -X POST -d "grant_type=password&username=salmanfazal1&password=salo-420" --user ' + app_id + ':' + secret +  ' https://www.reddit.com/api/v1/access_token';//"IO4b7Umj9U1Lew:7s_PGc_GzVgOErAZx3anONJj7og" https://www.reddit.com/api/v1/access_token';
+
+	//execute the command
+
+	child = exec(command, function(error, stdout, stderr){
+	if(stdout)
+		/*console.log('stdout: ' + stdout);
+		console.log('stderr: ' + stderr);*/
+		var thisSession = JSON.parse(stdout);
+
+		if(!thisSession.hasOwnProperty('access_token')){oAuth();}
+
+		//declare the global token for reddit service access
+		token = (JSON.parse(stdout)).access_token;
+		/*
+		console.log(token);
+		console.log(typeof token);*/3
+
+		if(error != null)
+		{
+		    console.log('exec error: ' + error);
+		}
+
+	});
+	return;
+}
+function reAuth(request, response){
+
+	//for debugging
+	console.log('reAuth called');
+
+	//request reddit for an authentication token
+	var command = 'curl -X POST -d "grant_type=password&username=salmanfazal1&password=salo-420" --user ' + app_id + ':' + secret +  ' https://www.reddit.com/api/v1/access_token';//"IO4b7Umj9U1Lew:7s_PGc_GzVgOErAZx3anONJj7og" https://www.reddit.com/api/v1/access_token';
+
+	//execute the command
+
+	child = exec(command, function(error, stdout, stderr){
+	if(stdout)
+		console.log('stdout: ' + stdout);
+		console.log('stderr: ' + stderr);
+		var thisSession = JSON.parse(stdout);
+
+		if(!thisSession.hasOwnProperty('access_token')){reAuth(request, response);}
+
+		//declare the global token for reddit service access
+		token = (JSON.parse(stdout)).access_token;
+		
+		console.log(token);
+		console.log(typeof token);
+
+		if(error != null)
+		{
+		    console.log('exec error: ' + error);
+
+		}else{data_request(request, response);}
+
+	});
+	return;
+}
+/**
+* Services user entered app requests. For now only get the appropriate subreddit
+*
+*/
+function data_request(request, response){
+	//client.set(request.url, request.url);
+	//header for request that will be sent to reddit
+	var header = {"Authorization": "bearer "+token, "User-Agent": "ChangeMeClient/0.1 by salmanfazal1"}
+
+		options = {
+			hostname: 'oauth.reddit.com', //will go thorugh oAuth as per reddit guidelines
+			path: '/r'+request.url + '.json', //format for path. TODO: have to generalize this for all queries
+			protocol: 'https:', //need a secure protocal to communicate
+			headers: header,
+			raw_json: 1 //to avoid getting legacy json from reddit
+		}
+		
+		//initiate https request to reddit
+		https.get(options, (res, error) => {
+			console.log('Status Code:' + res.statusCode);
+			
+			//on response
+			const { statusCode } = res;
+  			const contentType = res.headers['content-type'];
+
+  			res.setEncoding('utf8');
+		    let rawData = '';
+		    //compile the JSON string into one variable
+		    res.on('data', (chunk) => { 
+		    	console.log('data incoming');
+		    	rawData += chunk; });
+		    res.on('end', () => {
+		      try {
+		      	if(res.statusCode==401){
+					reAuth(request, response);
+					return;
+				}
+		      	//parse the string and display it. Display is strictly for debugging on localhost, should be taken out in production code
+		      	//console.log('data' + rawData);
+		      	if(res.statusCode==200){
+		      		const parsedData = JSON.parse(rawData);
+			        console.log(parsedData);
+			        var ret = parsedData.data;
+			        //write head to the front end
+			        response.writeHead(200, {'Content-Type': "application/json"});
+			        response.write(JSON.stringify(JSON.parse(rawData)));
+			        response.end();
+
+		      	}
+		        
+		      } catch (e) {
+		        console.error(e.message);
+		      }
+		      //console.log(rawData);
+		    });
+		});
+}
